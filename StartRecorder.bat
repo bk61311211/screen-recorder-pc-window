@@ -1,6 +1,9 @@
 @echo off
 setlocal
 
+:: Define installer path at the top so it's accessible for cleanup
+set "TEMP_INSTALLER=%TEMP%\python_312_installer.exe"
+
 echo Checking for Python...
 
 set "PYTHON_EXE="
@@ -37,8 +40,6 @@ goto :check_reqs
 echo No working Python found.
 echo Downloading and installing Python 3.12.9 in the background...
 
-set "TEMP_INSTALLER=%TEMP%\python_312_installer.exe"
-
 REM Download if not exists or small
 if exist "%TEMP_INSTALLER%" (
     for %%A in ("%TEMP_INSTALLER%") do if %%~zA LSS 20000000 del "%TEMP_INSTALLER%"
@@ -56,7 +57,6 @@ if not exist "%TEMP_INSTALLER%" (
 )
 
 echo Starting background installation...
-REM Using /quiet for fully silent installation
 start /wait "" "%TEMP_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
 
 echo.
@@ -97,4 +97,27 @@ if exist "recorder.py" (
 echo.
 echo --------------------------------------------------
 echo Recording session ended.
+set "CLEANUP=N"
+set /p CLEANUP="Do you want to uninstall Python and cleanup? (Y/N) [Default: N]: "
+
+if /i "%CLEANUP%"=="Y" (
+    echo.
+    echo Cleaning up libraries...
+    "%PYTHON_EXE%" -m pip uninstall -y -r requirements.txt >nul 2>&1
+
+    if exist "%TEMP_INSTALLER%" (
+        echo Uninstalling Python in the background...
+        start /wait "" "%TEMP_INSTALLER%" /quiet /uninstall
+        del "%TEMP_INSTALLER%"
+        echo Python has been uninstalled.
+    ) else (
+        echo Could not find the installer to perform uninstallation.
+    )
+    echo Cleanup complete.
+) else (
+    :: Even if not uninstalling Python, clean up the installer file to save space
+    if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
+)
+
+echo.
 pause
