@@ -1,1 +1,3 @@
+# Project exclude paths
 /.idea/
+/.idea/caches/
