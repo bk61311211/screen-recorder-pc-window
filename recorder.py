@@ -96,12 +96,18 @@ def main():
 
                         canvas = np.zeros((CANVAS_SIZE[1], CANVAS_SIZE[0], 3), dtype=np.uint8)
                         h, w = frame.shape[:2]
+
+                        # Resize if window is larger than canvas
                         scale = min(CANVAS_SIZE[0]/w, CANVAS_SIZE[1]/h, 1.0)
                         if scale < 1.0:
                             frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
                             h, w = frame.shape[:2]
 
-                        canvas[0:h, 0:w] = frame
+                        # Calculate offsets to center the frame on the canvas
+                        y_offset = (CANVAS_SIZE[1] - h) // 2
+                        x_offset = (CANVAS_SIZE[0] - w) // 2
+
+                        canvas[y_offset:y_offset+h, x_offset:x_offset+w] = frame
                         out.write(canvas)
 
                         # Display the final canvas in the preview
@@ -115,7 +121,12 @@ def main():
                 else:
                     # If no valid target, show a "waiting" screen
                     canvas = np.zeros((CANVAS_SIZE[1], CANVAS_SIZE[0], 3), dtype=np.uint8)
-                    cv2.putText(canvas, "Waiting for active window...", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 100), 2)
+                    text = "Waiting for active window..."
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    text_size = cv2.getTextSize(text, font, 1, 2)[0]
+                    text_x = (CANVAS_SIZE[0] - text_size[0]) // 2
+                    text_y = (CANVAS_SIZE[1] + text_size[1]) // 2
+                    cv2.putText(canvas, text, (text_x, text_y), font, 1, (100, 100, 100), 2)
                     out.write(canvas)
                     cv2.imshow(PREVIEW_TITLE, cv2.resize(canvas, (400, 225)))
 
