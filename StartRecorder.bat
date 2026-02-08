@@ -29,27 +29,32 @@ for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python312*") do (
     )
 )
 
-for /d %%d in ("%ProgramFiles%\Python312*") do (
-    if exist "%%d\python.exe" (
-        set "PYTHON_EXE=%%d\python.exe"
-        goto :check_reqs
-    )
-)
-
 :: --- 2. DOWNLOAD AND INSTALL PYTHON IF NOT FOUND ---
 echo Python not found.
 
+:: Check if the installer exists and is a "full file" (roughly > 20MB)
+set "RE_DOWNLOAD=0"
 if exist "%TEMP_INSTALLER%" (
-    echo Python installer already found in Temp. Skipping download.
+    for %%A in ("%TEMP_INSTALLER%") do set "FILESIZE=%%~zA"
+    if !FILESIZE! LSS 20000000 (
+        echo Existing installer seems too small (!FILESIZE! bytes). Will re-download.
+        set "RE_DOWNLOAD=1"
+    ) else (
+        echo Python installer found in Temp.
+    )
 ) else (
+    set "RE_DOWNLOAD=1"
+)
+
+if "!RE_DOWNLOAD!"=="1" (
     echo Downloading Python 3.12.9...
+    if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
     powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe' -OutFile '%TEMP_INSTALLER%'"
 )
 
 echo Installing Python for current user... (Please wait)
-:: InstallAllUsers=0: Installs to AppData (No Admin needed)
-:: PrependPath=1: Adds to user PATH
-start /wait "" "%TEMP_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
+:: Use /passive instead of /quiet to see progress bar without needing input
+start /wait "" "%TEMP_INSTALLER%" /passive InstallAllUsers=0 PrependPath=1 Include_test=0
 
 :: Re-check after installation
 timeout /t 5 >nul
@@ -64,8 +69,9 @@ for /d %%d in ("%LOCALAPPDATA%\Programs\Python\Python312*") do (
 )
 
 echo.
-echo Error: Python installation failed or could not be found.
-echo Try running this script as Administrator if it continues to fail.
+echo Error: Python installation failed.
+echo I will delete the installer so it downloads fresh next time.
+if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
 pause
 exit
 
@@ -74,12 +80,6 @@ exit
 echo.
 echo Using Python: !PYTHON_EXE!
 echo Checking libraries (mss, opencv, etc.)...
-if not exist "requirements.txt" (
-    echo Error: requirements.txt not found.
-    pause
-    exit
-)
-
 "!PYTHON_EXE!" -m pip install -r requirements.txt
 
 :: --- 4. RUN THE RECORDER ---
@@ -104,7 +104,7 @@ if /i "%CLEANUP%"=="Y" (
     )
 
     echo Uninstalling Python...
-    start /wait "" "%TEMP_INSTALLER%" /quiet /uninstall
+    start /wait "" "%TEMP_INSTALLER%" /passive /uninstall
     if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
     echo Cleanup complete.
     pause
