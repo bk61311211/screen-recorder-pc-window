@@ -1,6 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
 
+:: Define the temp installer path
+set "TEMP_INSTALLER=%TEMP%\python_312_installer.exe"
+
 :: --- 1. CHECK IF PYTHON IS INSTALLED ---
 echo Checking for Python...
 
@@ -26,14 +29,31 @@ if exist "!APP_DATA_PYTHON!" (
 )
 
 :: --- 2. DOWNLOAD AND INSTALL PYTHON IF NOT FOUND ---
-echo Python not found. Downloading Python 3.12.9...
-powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe' -OutFile 'python_installer.exe'"
+echo Python not found.
+
+:: Check if the installer is already in Temp
+if exist "%TEMP_INSTALLER%" (
+    echo Python installer already found in Temp. Skipping download.
+) else (
+    echo Downloading Python 3.12.9 to Temp...
+    powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe' -OutFile '%TEMP_INSTALLER%'"
+)
 
 echo Installing Python... (This will take a minute)
 :: /quiet: no UI, PrependPath=1: Add to PATH
-start /wait python_installer.exe /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
-:: Keep the installer for possible uninstall later
-:: del python_installer.exe
+start /wait "" "%TEMP_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+
+:: Check if installation was successful by trying to find python.exe again
+if not exist "!APP_DATA_PYTHON!" (
+    :: Some installations go to AllUsers path
+    set "ALL_USERS_PYTHON=%ProgramFiles%\Python312\python.exe"
+    if not exist "!ALL_USERS_PYTHON!" (
+        echo.
+        echo Error: Python installation failed or path not recognized.
+        pause
+        exit
+    )
+)
 
 echo.
 echo Python has been installed successfully.
@@ -76,22 +96,25 @@ if /i "%CLEANUP%"=="Y" (
     "!PYTHON_EXE!" -m pip uninstall -y -r requirements.txt
 
     echo.
-    echo Searching for Python installer to perform uninstall...
-    if not exist "python_installer.exe" (
+    echo Searching for Python installer in Temp to perform uninstall...
+    if not exist "%TEMP_INSTALLER%" (
         echo Downloading installer for uninstallation...
-        powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe' -OutFile 'python_installer.exe'"
+        powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe' -OutFile '%TEMP_INSTALLER%'"
     )
 
     echo Uninstalling Python... (Please wait)
-    start /wait python_installer.exe /quiet /uninstall
+    start /wait "" "%TEMP_INSTALLER%" /quiet /uninstall
 
-    if exist "python_installer.exe" del "python_installer.exe"
+    if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
 
     echo.
     echo Cleanup complete. Python and libraries have been removed.
     pause
     exit
 )
+
+:: Even if we don't uninstall, let's clean up the temp installer file
+if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
 
 echo.
 echo Keeping Python and libraries.
