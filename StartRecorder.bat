@@ -113,30 +113,34 @@ if /i "%CLEANUP%"=="Y" (
     echo Cleaning up libraries...
     "%PYTHON_EXE%" -m pip uninstall -y -r requirements.txt >nul 2>&1
 
-    REM Check if installer exists for uninstallation, download if missing
+    REM If uninstaller is missing, download it.
     if not exist "%TEMP_INSTALLER%" (
         echo Downloading uninstaller...
         powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%TEMP_INSTALLER%'"
     )
 
-    if exist "%TEMP_INSTALLER%" (
-        echo|set /p="Uninstalling Python in background... "
-        start "" "%TEMP_INSTALLER%" /quiet /uninstall
-
-        :wait_uninstall
-        timeout /t 2 >nul
-        echo|set /p="."
-        tasklist /fi "ImageName eq %INSTALLER_NAME%" | find /i "%INSTALLER_NAME%" >nul
-        if not errorlevel 1 goto :wait_uninstall
-
-        del "%TEMP_INSTALLER%"
-        echo.
-        echo Python has been removed.
-    ) else (
+    REM Verify installer exists before trying to use it.
+    if not exist "%TEMP_INSTALLER%" (
         echo.
         echo ERROR: Could not find or download the uninstaller.
         echo You may need to uninstall Python manually from Windows Settings.
+        goto :cleanup_done
     )
+
+    echo|set /p="Uninstalling Python in background... "
+    start "" "%TEMP_INSTALLER%" /quiet /uninstall
+
+    :wait_uninstall
+    timeout /t 2 >nul
+    echo|set /p="."
+    tasklist /fi "ImageName eq %INSTALLER_NAME%" | find /i "%INSTALLER_NAME%" >nul
+    if not errorlevel 1 goto :wait_uninstall
+
+    del "%TEMP_INSTALLER%"
+    echo.
+    echo Python has been removed.
+
+    :cleanup_done
     echo Cleanup complete.
 ) else (
     if exist "%TEMP_INSTALLER%" del "%TEMP_INSTALLER%"
