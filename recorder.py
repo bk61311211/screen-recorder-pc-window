@@ -7,6 +7,11 @@ import subprocess
 import ctypes
 from ctypes import wintypes
 from datetime import datetime
+import threading
+import sounddevice as sd
+import soundfile as sf
+from imageio_ffmpeg import get_ffmpeg_exe
+from pynput import keyboard
 
 # --- Configuration ---
 FPS = 20.0
@@ -14,6 +19,8 @@ FRAME_TIME = 1.0 / FPS
 PREVIEW_TITLE = "REC_PREVIEW_WINDOW"
 MIN_WINDOW_SIZE = 100
 FALLBACK_DURATION = 5.0
+SAMPLE_RATE = 44100
+CHANNELS = 2
 
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
 
@@ -46,10 +53,65 @@ def get_hwnd_at_mouse():
     except Exception:
         return None
 
+class AudioRecorder:
+    def __init__(self, filename):
+        self.filename = filename
+        self.recording = False
+        self.paused = False
+        self.audio_data = []
+        self.stream = None
+
+    def callback(self, indata, frames, time, status):
+        if self.recording and not self.paused:
+            self.audio_data.append(indata.copy())
+
+    def start(self):
+        self.recording = True
+        device_id = None
+        devices = sd.query_devices()
+        for i, dev in enumerate(devices):
+            if "loopback" in dev['name'].lower() or "stereo mix" in dev['name'].lower():
+                device_id = i
+                break
+
+        self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS,
+                                     callback=self.callback, device=device_id)
+        self.stream.start()
+
+    def stop(self):
+        self.recording = False
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+        if self.audio_data:
+            all_audio = np.concatenate(self.audio_data, axis=0)
+            sf.write(self.filename, all_audio, SAMPLE_RATE)
+
+class GlobalController:
+    def __init__(self):
+        self.running = True
+        self.paused = False
+        self.listener = keyboard.GlobalHotKeys({
+            '<ctrl>+q': self.on_quit,
+            '<ctrl>+<enter>': self.on_pause
+        })
+        self.listener.start()
+
+    def on_quit(self):
+        print("\n[Global Hotkey] Ctrl+Q pressed. Stopping recording...")
+        self.running = False
+
+    def on_pause(self):
+        self.paused = not self.paused
+        print("\n[Global Hotkey] Ctrl+Enter pressed. Status: " + ("PAUSED" if self.paused else "RESUMED"))
+
 def main():
     downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_path = os.path.join(downloads_dir, f"ScreenRec_{timestamp}.mp4")
+
+    temp_video = os.path.join(downloads_dir, f"temp_video_{timestamp}.mp4")
+    temp_audio = os.path.join(downloads_dir, f"temp_audio_{timestamp}.wav")
+    final_output = os.path.join(downloads_dir, f"ScreenRec_{timestamp}.mp4")
 
     console_hwnd = GetConsoleWindow()
     if console_hwnd:
@@ -57,30 +119,29 @@ def main():
         SetWindowDisplayAffinity(console_hwnd, WDA_EXCLUDEFROMCAPTURE)
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, FPS, CANVAS_SIZE)
+    out = cv2.VideoWriter(temp_video, fourcc, FPS, CANVAS_SIZE)
+
+    audio = AudioRecorder(temp_audio)
+    audio.start()
+
+    controller = GlobalController()
 
     print("--- Recorder Active ---")
-    print("Controls: [q] Stop | [p] Pause/Resume")
+    print("GLOBAL HOTKEYS:")
+    print("  [Ctrl + Q]     : Stop Recording")
+    print("  [Ctrl + Enter] : Pause / Resume")
     print(f"Resolution: {SCREEN_W}x{SCREEN_H}")
 
     active_target_hwnd = None
     fallback_start_time = 0
-    is_paused = False
 
     with mss.mss() as sct:
         try:
-            while True:
+            while controller.running:
                 start_time = time.time()
-                key = cv2.waitKey(1) & 0xFF
 
-                # Handle Controls
-                if key == ord('q'):
-                    break
-                if key == ord('p'):
-                    is_paused = not is_paused
-                    print("Status: " + ("PAUSED" if is_paused else "RESUMED"))
+                audio.paused = controller.paused
 
-                # --- Target Acquisition ---
                 potential_hwnd = get_hwnd_at_mouse()
                 preview_hwnd = FindWindowW(None, PREVIEW_TITLE)
 
@@ -100,9 +161,8 @@ def main():
                     active_target_hwnd = potential_hwnd
                     fallback_start_time = 0
 
-                # --- Frame Capture ---
                 frame = None
-                if not is_paused:
+                if not controller.paused:
                     if active_target_hwnd and IsWindow(active_target_hwnd):
                         try:
                             rect = wintypes.RECT()
@@ -117,9 +177,7 @@ def main():
                         img = np.array(sct.grab(sct.monitors[1]))
                         frame = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
-                # --- Rendering ---
                 canvas = np.zeros((CANVAS_SIZE[1], CANVAS_SIZE[0], 3), dtype=np.uint8)
-
                 if frame is not None:
                     fh, fw = frame.shape[:2]
                     scale = min(CANVAS_SIZE[0]/fw, CANVAS_SIZE[1]/fh, 1.0)
@@ -130,22 +188,19 @@ def main():
                     x_offset = (CANVAS_SIZE[0] - fw) // 2
                     canvas[y_offset:y_offset+fh, x_offset:x_offset+fw] = frame
 
-                # Visual Overlays for Preview
                 preview_h = 225
                 preview_w = int(preview_h * (SCREEN_W / SCREEN_H))
                 preview_img = cv2.resize(canvas, (preview_w, preview_h))
 
-                if is_paused:
-                    # Show PAUSED overlay
+                if controller.paused:
                     cv2.rectangle(preview_img, (0,0), (preview_w, preview_h), (0,0,0), -1)
                     cv2.putText(preview_img, "PAUSED", (preview_w//4, preview_h//2),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
                 else:
-                    # Show REC dot
                     cv2.circle(preview_img, (20, 20), 8, (0, 0, 255), -1)
                     cv2.putText(preview_img, "REC", (35, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
-                if not is_paused:
+                if not controller.paused:
                     out.write(canvas)
 
                 cv2.imshow(PREVIEW_TITLE, preview_img)
@@ -154,17 +209,40 @@ def main():
                     SetWindowPos(preview_hwnd, -1, SCREEN_W - (preview_w + 20), SCREEN_H - (preview_h + 80), 0, 0, 0x0001)
                     SetWindowDisplayAffinity(preview_hwnd, WDA_EXCLUDEFROMCAPTURE)
 
+                cv2.waitKey(1)
+
                 elapsed = time.time() - start_time
                 wait_time = FRAME_TIME - elapsed
                 if wait_time > 0:
                     time.sleep(wait_time)
 
         finally:
+            controller.listener.stop()
             out.release()
+            audio.stop()
             cv2.destroyAllWindows()
-            print(f"\nSaved to: {output_path}")
-            if os.path.exists(output_path):
-                subprocess.run(['explorer', '/select,', output_path])
+
+            print("\nFinalizing video and audio (Merging)...")
+            ffmpeg_exe = get_ffmpeg_exe()
+
+            cmd = [
+                ffmpeg_exe, "-y",
+                "-i", temp_video,
+                "-i", temp_audio,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-strict", "experimental",
+                final_output
+            ]
+
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            if os.path.exists(temp_video): os.remove(temp_video)
+            if os.path.exists(temp_audio): os.remove(temp_audio)
+
+            print(f"Saved to: {final_output}")
+            if os.path.exists(final_output):
+                subprocess.run(['explorer', '/select,', final_output])
 
 if __name__ == "__main__":
     main()

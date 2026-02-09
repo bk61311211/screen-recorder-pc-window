@@ -3,3 +3,7 @@ pygetwindow
 opencv-python
 numpy
 pyautogui
+sounddevice
+soundfile
+imageio-ffmpeg
+pynput
