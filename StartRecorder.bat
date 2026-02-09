@@ -48,10 +48,11 @@ if exist "%TEMP_INSTALLER%" (
 )
 
 if not exist "%TEMP_INSTALLER%" (
-    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%TEMP_INSTALLER%'"
+    powershell -Command "$ProgressPreference = 'SilentlyContinue'; $url='%PYTHON_URL%'; $file='%TEMP_INSTALLER%'; $wc=New-Object System.Net.WebClient; $wc.DownloadFileAsync($url,$file); while($wc.IsBusy){ $item=Get-Item $file -ErrorAction SilentlyContinue; if($item){ $s=$item.Length/1MB; Write-Host -NoNewline (\"`rProgress: \" + [Math]::Round($s,2) + \" MB\") }; Start-Sleep -m 200 }; Write-Host \"`rDownload Complete!          \""
 )
 
 if not exist "%TEMP_INSTALLER%" (
+    echo.
     echo ERROR: Download failed.
     pause
     exit /b 1
@@ -87,7 +88,8 @@ exit /b 1
 echo.
 echo Using: %PYTHON_EXE%
 echo Checking/Installing libraries...
-"%PYTHON_EXE%" -m pip install --no-warn-script-location --disable-pip-version-check -r requirements.txt
+REM Using --progress-bar off to prevent pip from showing its own byte-based progress
+"%PYTHON_EXE%" -m pip install --no-warn-script-location --disable-pip-version-check --progress-bar off -r requirements.txt
 if errorlevel 1 (
     echo ERROR: Library installation failed.
     pause
@@ -116,7 +118,7 @@ if /i "%CLEANUP%"=="Y" (
     REM If uninstaller is missing, download it.
     if not exist "%TEMP_INSTALLER%" (
         echo Downloading uninstaller...
-        powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%TEMP_INSTALLER%'"
+        powershell -Command "$ProgressPreference = 'SilentlyContinue'; $url='%PYTHON_URL%'; $file='%TEMP_INSTALLER%'; $wc=New-Object System.Net.WebClient; $wc.DownloadFileAsync($url,$file); while($wc.IsBusy){ $item=Get-Item $file -ErrorAction SilentlyContinue; if($item){ $s=$item.Length/1MB; Write-Host -NoNewline (\"`rProgress: \" + [Math]::Round($s,2) + \" MB\") }; Start-Sleep -m 200 }; Write-Host \"`rDownload Complete!          \""
     )
 
     REM Verify installer exists before trying to use it.
