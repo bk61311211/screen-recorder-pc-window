@@ -10,7 +10,8 @@ A portable, zero-setup screen recording utility for Windows that can capture spe
     *   Hover your mouse over any window to lock onto it.
     *   A preview window will appear in the bottom-right of your screen.
 4.  **Control Recording**:
-    *   **Pause/Resume**: Press **`Ctrl + Enter`** globally.
+    *   **Pause/Resume Everything**: Press **`Ctrl + Enter`** globally.
+    *   **Mute/Unmute Audio Only**: Press **`Ctrl + M`** globally.
     *   **Stop Recording**: Press **`Ctrl + Q`** globally.
 5.  **Find Your Video**: After stopping, the script will merge the video and audio. Your final recording will be saved in your **Downloads** folder and automatically selected in File Explorer.
 6.  **Cleanup**: The script will ask if you want to uninstall Python and the libraries to leave your PC clean.
@@ -20,6 +21,7 @@ A portable, zero-setup screen recording utility for Windows that can capture spe
 *   **Zero Configuration**: No need to manually install Python or libraries.
 *   **Global Hotkeys**: Control the recorder from any application.
 *   **Pause & Resume**: Start and stop the recording as needed.
+*   **Dedicated Audio Mute**: Toggle sound recording on/off without stopping the video.
 *   **System Audio Capture**: Automatically records the sound playing from your speakers (Loopback/Stereo Mix).
 *   **Smart Targetting**: Automatically captures the window under your mouse cursor.
 *   **Native Resolution**: Records in your monitor's native resolution for the best quality.

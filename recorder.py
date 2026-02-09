@@ -57,12 +57,14 @@ class AudioRecorder:
     def __init__(self, filename):
         self.filename = filename
         self.recording = False
-        self.paused = False
+        self.paused = False        # For global pause (Both)
+        self.muted = False         # For audio-only pause
         self.audio_data = []
         self.stream = None
 
     def callback(self, indata, frames, time, status):
-        if self.recording and not self.paused:
+        # Only record if not paused AND not muted
+        if self.recording and not self.paused and not self.muted:
             self.audio_data.append(indata.copy())
 
     def start(self):
@@ -91,19 +93,25 @@ class GlobalController:
     def __init__(self):
         self.running = True
         self.paused = False
+        self.audio_muted = False
         self.listener = keyboard.GlobalHotKeys({
             '<ctrl>+q': self.on_quit,
-            '<ctrl>+<enter>': self.on_pause
+            '<ctrl>+<enter>': self.on_pause,
+            '<ctrl>+m': self.on_mute
         })
         self.listener.start()
 
     def on_quit(self):
-        print("\n[Global Hotkey] Ctrl+Q pressed. Stopping recording...")
+        print("\n[Global Hotkey] Ctrl+Q pressed. Stopping...")
         self.running = False
 
     def on_pause(self):
         self.paused = not self.paused
         print("\n[Global Hotkey] Ctrl+Enter pressed. Status: " + ("PAUSED" if self.paused else "RESUMED"))
+
+    def on_mute(self):
+        self.audio_muted = not self.audio_muted
+        print("\n[Global Hotkey] Ctrl+M pressed. Audio: " + ("MUTED" if self.audio_muted else "ACTIVE"))
 
 def main():
     downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -129,7 +137,8 @@ def main():
     print("--- Recorder Active ---")
     print("GLOBAL HOTKEYS:")
     print("  [Ctrl + Q]     : Stop Recording")
-    print("  [Ctrl + Enter] : Pause / Resume")
+    print("  [Ctrl + Enter] : Pause / Resume (Video & Audio)")
+    print("  [Ctrl + M]     : Mute / Unmute Audio Only")
     print(f"Resolution: {SCREEN_W}x{SCREEN_H}")
 
     active_target_hwnd = None
@@ -140,7 +149,9 @@ def main():
             while controller.running:
                 start_time = time.time()
 
+                # Sync audio state with controller
                 audio.paused = controller.paused
+                audio.muted = controller.audio_muted
 
                 potential_hwnd = get_hwnd_at_mouse()
                 preview_hwnd = FindWindowW(None, PREVIEW_TITLE)
@@ -188,6 +199,7 @@ def main():
                     x_offset = (CANVAS_SIZE[0] - fw) // 2
                     canvas[y_offset:y_offset+fh, x_offset:x_offset+fw] = frame
 
+                # Preview overlays
                 preview_h = 225
                 preview_w = int(preview_h * (SCREEN_W / SCREEN_H))
                 preview_img = cv2.resize(canvas, (preview_w, preview_h))
@@ -197,8 +209,13 @@ def main():
                     cv2.putText(preview_img, "PAUSED", (preview_w//4, preview_h//2),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
                 else:
+                    # REC status
                     cv2.circle(preview_img, (20, 20), 8, (0, 0, 255), -1)
                     cv2.putText(preview_img, "REC", (35, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    # MUTE status
+                    if controller.audio_muted:
+                        cv2.putText(preview_img, "AUDIO MUTED", (20, preview_h - 20),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
                 if not controller.paused:
                     out.write(canvas)
@@ -222,7 +239,7 @@ def main():
             audio.stop()
             cv2.destroyAllWindows()
 
-            print("\nFinalizing video and audio (Merging)...")
+            print("\nFinalizing (Merging Audio/Video)...")
             ffmpeg_exe = get_ffmpeg_exe()
 
             cmd = [
