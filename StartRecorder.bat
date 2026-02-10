@@ -5,13 +5,25 @@ setlocal enabledelayedexpansion
 set "TEMP_INSTALLER=%TEMP%\python_312_installer.exe"
 set "INSTALLER_NAME=python_312_installer.exe"
 set "PYTHON_URL=https://www.python.org/ftp/python/3.12.9/python-3.12.9-amd64.exe"
+set "VENV_DIR=.recorder_venv"
 
 echo Checking for Python...
 
 set "PYTHON_EXE="
 
-REM --- 1. CHECK DIRECT PATHS FIRST ---
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+REM --- 1. TRY SYSTEM COMMANDS FIRST (Includes Microsoft Store shortcut) ---
+python -c "import sys" >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_EXE=python"
+)
+
+if not defined PYTHON_EXE (
+    py -c "import sys" >nul 2>&1
+    if not errorlevel 1 set "PYTHON_EXE=py"
+)
+
+REM --- 2. CHECK DIRECT PATHS ---
+if not defined PYTHON_EXE if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" -c "import sys" >nul 2>&1
     if not errorlevel 1 set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
 )
@@ -19,17 +31,6 @@ if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
 if not defined PYTHON_EXE if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
     "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" -c "import sys" >nul 2>&1
     if not errorlevel 1 set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-)
-
-REM --- 2. CHECK COMMANDS ---
-if not defined PYTHON_EXE (
-    py -c "import sys" >nul 2>&1
-    if not errorlevel 1 set "PYTHON_EXE=py"
-)
-
-if not defined PYTHON_EXE (
-    python -c "import sys" >nul 2>&1
-    if not errorlevel 1 set "PYTHON_EXE=python"
 )
 
 REM --- 3. DECIDE: RUN OR INSTALL ---
@@ -87,8 +88,17 @@ exit /b 1
 :check_reqs
 echo.
 echo Using: %PYTHON_EXE%
+
+:: Create Virtual Environment for a 100%% clean setup/cleanup
+if not exist "%VENV_DIR%" (
+    echo|set /p="Creating virtual environment... "
+    "%PYTHON_EXE%" -m venv %VENV_DIR%
+    echo Done.
+)
+set "RUN_PYTHON=%VENV_DIR%\Scripts\python.exe"
+
 echo Checking/Installing libraries...
-"%PYTHON_EXE%" -m pip install --no-warn-script-location --disable-pip-version-check --progress-bar off -r requirements.txt
+"%RUN_PYTHON%" -m pip install --no-warn-script-location --disable-pip-version-check --progress-bar off -r requirements.txt
 if errorlevel 1 (
     echo ERROR: Library installation failed.
     pause
@@ -98,7 +108,7 @@ if errorlevel 1 (
 echo.
 echo Starting recorder...
 if exist "recorder.py" (
-    "%PYTHON_EXE%" "recorder.py"
+    "%RUN_PYTHON%" "recorder.py"
 ) else (
     echo ERROR: recorder.py not found.
 )
@@ -111,8 +121,10 @@ set /p CLEANUP="Do you want to uninstall Python and cleanup? (Y/N) [Default: N]:
 
 if /i "%CLEANUP%"=="Y" (
     echo.
-    echo Cleaning up libraries...
-    "%PYTHON_EXE%" -m pip uninstall -y -r requirements.txt >nul 2>&1
+    echo|set /p="Cleaning up libraries... "
+    if exist "%VENV_DIR%" rd /s /q "%VENV_DIR%"
+    "%PYTHON_EXE%" -m pip cache purge >nul 2>&1
+    echo Done.
 
     REM If uninstaller is missing, download it.
     if not exist "%TEMP_INSTALLER%" (
