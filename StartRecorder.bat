@@ -11,7 +11,7 @@ echo Checking for Python...
 
 set "PYTHON_EXE="
 
-REM --- 1. TRY SYSTEM COMMANDS FIRST (Includes Microsoft Store shortcut) ---
+REM --- 1. TRY SYSTEM COMMANDS FIRST ---
 python -c "import sys" >nul 2>&1
 if not errorlevel 1 (
     set "PYTHON_EXE=python"
@@ -60,28 +60,39 @@ if not exist "%TEMP_INSTALLER%" (
 )
 
 echo.
-echo|set /p="Installing Python in background... "
-start "" "%TEMP_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
-
-:wait_install
-timeout /t 2 >nul
-echo|set /p="."
-tasklist /fi "ImageName eq %INSTALLER_NAME%" | find /i "%INSTALLER_NAME%" >nul
-if not errorlevel 1 goto :wait_install
+echo Installing Python (this may take a moment)...
+start /wait "" "%TEMP_INSTALLER%" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
 
 echo.
 echo Verifying installation...
-timeout /t 3 >nul
 
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+    set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
     echo Installation successful!
-    echo Restarting script...
-    timeout /t 2 >nul
-    start "" "%~f0"
-    exit /b 0
+    goto :check_reqs
 )
 
-echo ERROR: Installation finished but python.exe still couldn't be located.
+if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+    set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    echo Installation successful!
+    goto :check_reqs
+)
+
+python -c "import sys" >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_EXE=python"
+    echo Installation successful!
+    goto :check_reqs
+)
+
+py -c "import sys" >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON_EXE=py"
+    echo Installation successful!
+    goto :check_reqs
+)
+
+echo ERROR: Installation finished but python.exe could not be located.
 pause
 exit /b 1
 
@@ -89,7 +100,7 @@ exit /b 1
 echo.
 echo Using: %PYTHON_EXE%
 
-:: Create Virtual Environment for a 100%% clean setup/cleanup
+:: Create Virtual Environment for a clean setup/cleanup
 if not exist "%VENV_DIR%" (
     echo|set /p="Creating virtual environment... "
     "%PYTHON_EXE%" -m venv %VENV_DIR%
@@ -97,8 +108,17 @@ if not exist "%VENV_DIR%" (
 )
 set "RUN_PYTHON=%VENV_DIR%\Scripts\python.exe"
 
+if not exist "%RUN_PYTHON%" (
+    echo ERROR: Failed to create virtual environment.
+    pause
+    exit /b 1
+)
+
+echo Upgrading pip...
+"%RUN_PYTHON%" -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org --quiet >nul 2>&1
+
 echo Checking/Installing libraries...
-"%RUN_PYTHON%" -m pip install --no-warn-script-location --disable-pip-version-check --progress-bar off -r requirements.txt
+"%RUN_PYTHON%" -m pip install --no-warn-script-location --disable-pip-version-check --progress-bar off --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org -r requirements.txt
 if errorlevel 1 (
     echo ERROR: Library installation failed.
     pause
@@ -111,6 +131,8 @@ if exist "recorder.py" (
     "%RUN_PYTHON%" "recorder.py"
 ) else (
     echo ERROR: recorder.py not found.
+    pause
+    exit /b 1
 )
 
 echo.
@@ -140,14 +162,8 @@ if /i "%CLEANUP%"=="Y" (
         goto :cleanup_done
     )
 
-    echo|set /p="Uninstalling Python in background... "
-    start "" "%TEMP_INSTALLER%" /quiet /uninstall
-
-    :wait_uninstall
-    timeout /t 2 >nul
-    echo|set /p="."
-    tasklist /fi "ImageName eq %INSTALLER_NAME%" | find /i "%INSTALLER_NAME%" >nul
-    if not errorlevel 1 goto :wait_uninstall
+    echo|set /p="Uninstalling Python... "
+    start /wait "" "%TEMP_INSTALLER%" /quiet /uninstall
 
     del "%TEMP_INSTALLER%"
     echo.
